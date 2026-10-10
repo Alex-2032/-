@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>家养小精灵</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      overflow: hidden;
+      background: #f8f6f2;
+      font-family: sans-serif;
+      user-select: none;
+      touch-action: none;
+    }
+
+    #world {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+    }
+
+    /* ===== 小精灵 ===== */
+    .sprite {
+      position: absolute;
+      width: 90px;
+      height: auto;
+      cursor: grab;
+      transition: none;
+    }
+
+    .sprite.happy {
+      animation: happyBounce 0.6s ease;
+    }
+
+    @keyframes happyBounce {
+      0%   { transform: scale(1, 1) translateY(0); }
+      30%  { transform: scale(1.3, 1) translateY(0); }
+      55%  { transform: scale(0.8, 1) translateY(-20px); }
+      80%  { transform: scale(1, 1) translateY(0); }
+      100% { transform: scale(1, 1) translateY(0); }
+    }
+
+    /* 抚摸时的反应：左右摇晃 + 轻微缩放 */
+    .sprite.petted {
+      animation: petWiggle 0.5s ease;
+    }
+
+    @keyframes petWiggle {
+      0%   { transform: translateX(0) translateY(0) scale(1); }
+      25%  { transform: translateX(10px) translateY(0) scale(1.2); }
+      50%  { transform: translateX(20px) translateY(6px) scale(1.2); }
+      75%  { transform: translateX(10px) translateY(0px) scale(1.2); }
+      100% { transform: translateX(0) translateY(0) scale(1); }
+    }
+
+    /* ===== 食物按钮：白底黑框，和手绘风格统一 ===== */
+    #foodBtn {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 18px;
+      padding: 10px 24px;
+      border: 2px solid #222;
+      border-radius: 12px;
+      background: #fff;
+      color: #222;
+      cursor: pointer;
+      box-shadow: 3px 3px 0 #222;
+      transition: transform 0.12s cubic-bezier(0.34,1.56,0.64,1),
+                  box-shadow 0.12s ease;
+      z-index: 9999;
+      font-family: inherit;
+    }
+
+    #foodBtn:hover {
+      transform: translateX(-50%) translateY(-2px);
+      box-shadow: 5px 5px 0 #222;
+    }
+
+    #foodBtn:active {
+      transform: translateX(-50%) translateY(3px);
+      box-shadow: 1px 1px 0 #222;
+    }
+
+    /* ===== 食物（苹果图片）===== */
+    .apple {
+      position: absolute;
+      width: 45px;
+      height: auto;
+      cursor: grab;
+      z-index: 8000;
+      transition: transform 0.15s ease;
+      user-select: none;
+      pointer-events: auto;
+    }
+
+    .apple.dragging {
+      cursor: grabbing;
+      transform: scale(1.2);
+      transition: none;
+      z-index: 9000;
+    }
+
+    /* 苹果生成时的"弹跳"动画，吸引注意 */
+    .apple.spawn {
+      animation: applePop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    @keyframes applePop {
+      0%   { transform: scale(0) rotate(-180deg); }
+      100% { transform: scale(1) rotate(0deg); }
+    }
+
+    /* ===== 提示文字 ===== */
+    #hint {
+      position: fixed;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #000000;
+      font-size: 14px;
+      z-index: 9999;
+    }
+  </style>
+</head>
+<body>
+  <div id="hint">快来和我玩吧!</div>
+  <div id="world"></div>
+  <button id="foodBtn">食物</button>
+
+  <script>
+    /* ===== 第一块：创建 5 只小精灵 ===== */
+    const SPRITE_FILES = [
+      'assets/pet/sprite1.png',
+      'assets/pet/sprite2.png',
+      'assets/pet/sprite3.png',
+      'assets/pet/sprite4.png',
+      'assets/pet/sprite5.png',
+    ];
+
+    const world = document.getElementById('world');
+    const W = () => window.innerWidth;
+    const H = () => window.innerHeight;
+
+    const sprites = [];
+
+    SPRITE_FILES.forEach(function (src, i) {
+      const el = document.createElement('img');
+      el.src = src;
+      el.className = 'sprite';
+      el.draggable = false;
+
+      const x = Math.random() * (W() - 90);
+      const y = Math.random() * (H() - 200) + 60;
+
+      el.style.left = x + 'px';
+      el.style.top  = y + 'px';
+
+      world.appendChild(el);
+
+      sprites.push({
+        el: el,
+        x: x,
+        y: y,
+        targetX: x,
+        targetY: y,
+        speed: 0.8 + Math.random() * 0.8,
+      });
+
+      el.addEventListener('pointerdown', function (e) {
+        petSprite(sprites[i]);
+      });
+    });
+
+
+    /* ===== 第二块：随机游走 ===== */
+    function pickNewTarget(spr) {
+      spr.targetX = 40 + Math.random() * (W() - 130);
+      spr.targetY = 60 + Math.random() * (H() - 200);
+    }
+
+    function gameLoop() {
+      sprites.forEach(function (spr) {
+        const dx = spr.targetX - spr.x;
+        const dy = spr.targetY - spr.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < 5) pickNewTarget(spr);
+
+        if (dist > 0) {
+          spr.x += (dx / dist) * spr.speed;
+          spr.y += (dy / dist) * spr.speed;
+        }
+
+        spr.el.style.left = spr.x + 'px';
+        spr.el.style.top  = spr.y + 'px';
+
+        if (dx < -0.5) spr.el.style.transform = 'scaleX(-1)';
+        else if (dx > 0.5) spr.el.style.transform = 'scaleX(1)';
+      });
+
+      requestAnimationFrame(gameLoop);
+    }
+
+    sprites.forEach(pickNewTarget);
+    requestAnimationFrame(gameLoop);
+
+
+    /* ===== 第三块：抚摸功能 ===== */
+    function petSprite(spr) {
+      spr.el.classList.remove('petted');
+      void spr.el.offsetWidth;
+      spr.el.classList.add('petted');
+      setTimeout(function () { spr.el.classList.remove('petted'); }, 500);
+    }
+
+
+    /* ===== 第四块：生成苹果 + 拖拽 + 喂食 ===== */
+    const foodBtn = document.getElementById('foodBtn');
+
+    foodBtn.addEventListener('click', function () {
+      const apple = document.createElement('img');
+      apple.src = 'assets/food/apple.png';
+      apple.className = 'apple spawn';   // 加上 spawn 类播放弹跳动画
+      apple.draggable = false;
+
+      // ★ 改为屏幕中央偏上——醒目位置，不会被按钮挡住
+      apple.style.left = (W() / 2 - 22) + 'px';
+      apple.style.top  = (H() / 2 - 100) + 'px';
+
+      world.appendChild(apple);
+      setupDrag(apple);
+
+      // 0.4 秒动画播完后去掉 spawn 类，避免拖拽时冲突
+      setTimeout(function () { apple.classList.remove('spawn'); }, 400);
+    });
+
+    function setupDrag(el) {
+      let dragging = false;
+      let offX = 0, offY = 0;
+
+      el.addEventListener('pointerdown', function (e) {
+        e.stopPropagation();
+        dragging = true;
+        el.classList.add('dragging');
+        el.setPointerCapture(e.pointerId);
+
+        const rect = el.getBoundingClientRect();
+        offX = e.clientX - rect.left;
+        offY = e.clientY - rect.top;
+      });
+
+      el.addEventListener('pointermove', function (e) {
+        if (!dragging) return;
+        const newX = e.clientX - offX;
+        const newY = e.clientY - offY;
+        el.style.left = newX + 'px';
+        el.style.top  = newY + 'px';
+        checkFeeding(el, newX, newY);
+      });
+
+      el.addEventListener('pointerup', function (e) {
+        dragging = false;
+        el.classList.remove('dragging');
+      });
+    }
+
+    function checkFeeding(apple, appleX, appleY) {
+      const ax = appleX + 22;
+      const ay = appleY + 28;
+
+      sprites.forEach(function (spr) {
+        const sx = spr.x + 45;
+        const sy = spr.y + 45;
+        const dx = ax - sx;
+        const dy = ay - sy;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < 55) feedSprite(spr, apple);
+      });
+    }
+
+    function feedSprite(spr, apple) {
+      apple.remove();
+
+      spr.el.classList.remove('happy');
+      void spr.el.offsetWidth;
+      spr.el.classList.add('happy');
+
+      setTimeout(function () { spr.el.classList.remove('happy'); }, 600);
+    }
+  </script>
+</body>
+</html>
